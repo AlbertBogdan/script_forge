@@ -1,6 +1,7 @@
 from utils import tqdm
 
 import boto3
+import uuid
 import logging
 from pathlib import Path
 from botocore.exceptions import ClientError
@@ -84,23 +85,34 @@ class S3Manager:
         build_tree(folder_structure, root)
         console.print(root)
 
-    def download_file(self, bucket_name: str, object_key: Path, local_path: Path):
+
+    def download_file(self, bucket_name: str, object_key: Path, local_path: Path, keep_structure: bool = True):
         """
         Downloads a file from an S3 bucket to a local path.
 
         Args:
             bucket_name (str): The name of the S3 bucket.
             object_key (Path): The key of the object in the S3 bucket.
-            local_path (Path): The local path where the file will be downloaded.
-
-        Example:
-            >>> s3_manager.download_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
+            local_path (Path): The base local directory for downloads.
+            keep_structure (bool): Whether to preserve the S3 directory structure locally.
+                                If False, adds unique identifiers to avoid name conflicts.
+                                Defaults to True.
         """
         try:
-            self.s3_client.download_file(bucket_name, str(object_key), str(local_path))
-            logger.info(f"File {object_key} downloaded to {local_path}")
+            if keep_structure:
+                full_local_path = local_path / object_key
+            else:
+                unique_suffix = uuid.uuid4().hex[:8]
+                full_local_path = local_path / f"{object_key.name}_{unique_suffix}"
+
+            full_local_path.parent.mkdir(parents=True, exist_ok=True)
+
+            self.s3_client.download_file(bucket_name, str(object_key), str(full_local_path))
+            logger.info(f"File {object_key} downloaded to {full_local_path}")
+
         except ClientError as e:
             logger.error(f"Error downloading file {object_key}: {e}")
+
 
     def parallel_download(self, list_files: list[Path], bucket_name: str, local_base_path: Path, max_workers: int = 10):
         """
