@@ -1,8 +1,9 @@
+from utils import tqdm
+
 import boto3
 import logging
 from pathlib import Path
 from botocore.exceptions import ClientError
-from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logging.basicConfig(level=logging.INFO)
@@ -19,7 +20,8 @@ class S3Manager:
 
     def list_objects(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path]:
         try:
-            response = self.s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
+            response = self.s3_client.list_objects_v2(
+                Bucket=bucket_name, Prefix=prefix)
             if "Contents" not in response:
                 logger.info(f"No objects found in folder: {prefix}")
                 return []
@@ -29,7 +31,8 @@ class S3Manager:
             ]
 
             if not objects:
-                logger.info(f"No {file_extension if file_extension else 'files'} found in folder: {prefix}")
+                logger.info(
+                    f"No {file_extension if file_extension else 'files'} found in folder: {prefix}")
             return objects
 
         except ClientError as e:
@@ -80,21 +83,23 @@ class S3Manager:
             File path/to/my-file.txt downloaded to /local/path/to/my-file.txt
         """
         try:
-            self.s3_client.download_file(bucket_name, str(object_key), str(local_path))
+            self.s3_client.download_file(
+                bucket_name, str(object_key), str(local_path))
             logger.info(f"File {object_key} downloaded to {local_path}")
         except ClientError as e:
             logger.error(f"Error downloading file {object_key}: {e}")
 
-    def parallel_download(self, list_files: list[Path], bucket_name:str, local_base_path: Path):
-        with ThreadPoolExecutor(max_workers=10) as executor:
+    def parallel_download(self, list_files: list[Path], bucket_name: str, local_base_path: Path, num_w: int = 5):
+        with ThreadPoolExecutor(num_w) as executor:
             futures = []
             for file in list_files:
                 file_path = Path(file)
                 local_path = local_base_path / file_path.name
-                futures.append(executor.submit(self.download_file, bucket_name, file, local_path))
+                futures.append(executor.submit(
+                    self.download_file, bucket_name, file, local_path))
 
             for future in tqdm(as_completed(futures), total=len(futures)):
-                future.result()  # This will raise any exceptions that occurred during the download
+                future.result()
 
     def upload_file(self, bucket_name: str, object_key: Path, local_path: Path):
         """
@@ -115,7 +120,8 @@ class S3Manager:
             File /local/path/to/my-file.txt uploaded to my-bucket/path/to/my-file.txt
         """
         try:
-            self.s3_client.upload_file(str(local_path), bucket_name, str(object_key))
+            self.s3_client.upload_file(
+                str(local_path), bucket_name, str(object_key))
             logger.info(f"File {local_path} uploaded to {bucket_name}/{object_key}")
         except ClientError as e:
             logger.error(f"Error uploading file {local_path}: {e}")
