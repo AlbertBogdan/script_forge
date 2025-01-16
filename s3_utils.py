@@ -16,7 +16,7 @@ class S3Manager:
             aws_secret_access_key=aws_secret_access_key,
         )
 
-    def list_objects(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[str]:
+    def list_objects(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path]:
         try:
             response = self.s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
             if "Contents" not in response:
@@ -24,7 +24,7 @@ class S3Manager:
                 return []
 
             objects = [
-                obj["Key"] for obj in response["Contents"] if not file_extension or obj["Key"].endswith(file_extension)
+                Path(obj["Key"]) for obj in response["Contents"] if not file_extension or obj["Key"].endswith(file_extension)
             ]
 
             if not objects:
@@ -35,7 +35,7 @@ class S3Manager:
             logger.error(f"Error listing objects: {e}")
             return []
 
-    def print_file_structure(self, files: list[str]):
+    def print_file_structure(self, files: list[Path]):
         if not files:
             logger.info("No files to display.")
             return
@@ -43,7 +43,7 @@ class S3Manager:
         folder_structure = {}
 
         for file in files:
-            parts = file.split("/")
+            parts = file.stem.split("/")
             current_level = folder_structure
 
             for part in parts:
@@ -60,7 +60,7 @@ class S3Manager:
         print("Listing file structure:")
         print_hierarchy(folder_structure)
 
-    def download_file(self, bucket_name: str, object_key: str, local_path: str):
+    def download_file(self, bucket_name: str, object_key: Path, local_path: Path):
         """
         Downloads a file from an S3 bucket to a local path.
 
@@ -78,14 +78,13 @@ class S3Manager:
             >>> s3_manager.download_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
             File path/to/my-file.txt downloaded to /local/path/to/my-file.txt
         """
-        local_path = Path(local_path)
         try:
-            self.s3_client.download_file(bucket_name, object_key, str(local_path))
+            self.s3_client.download_file(bucket_name, str(object_key), str(local_path))
             logger.info(f"File {object_key} downloaded to {local_path}")
         except ClientError as e:
             logger.error(f"Error downloading file {object_key}: {e}")
 
-    def upload_file(self, bucket_name: str, object_key: str, local_path: str):
+    def upload_file(self, bucket_name: str, object_key: Path, local_path: Path):
         """
         Uploads a file from a local path to an S3 bucket.
 
@@ -104,9 +103,8 @@ class S3Manager:
             >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
             File /local/path/to/my-file.txt uploaded to my-bucket/path/to/my-file.txt
         """
-        local_path = Path(local_path)
         try:
-            self.s3_client.upload_file(str(local_path), bucket_name, object_key)
+            self.s3_client.upload_file(str(local_path), bucket_name, str(object_key))
             logger.info(f"File {local_path} uploaded to {bucket_name}/{object_key}")
         except ClientError as e:
             logger.error(f"Error uploading file {local_path}: {e}")
