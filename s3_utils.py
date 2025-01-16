@@ -19,6 +19,17 @@ class S3Manager:
         )
 
     def list_objects(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path]:
+        """
+        Lists objects in an S3 bucket that match the specified prefix and optional file extension.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            prefix (str): The prefix to filter objects in the bucket.
+            file_extension (str, optional): The file extension to filter objects. If None, all objects with the specified prefix are listed. Defaults to None.
+
+        Example:
+            >>> objects = s3_manager.list_objects("my-bucket", "my-prefix", ".txt")
+        """
         try:
             response = self.s3_client.list_objects_v2(
                 Bucket=bucket_name, Prefix=prefix)
@@ -73,12 +84,7 @@ class S3Manager:
             object_key (str): The key of the object in the S3 bucket.
             local_path (str): The local path where the file will be downloaded.
 
-        Logs:
-            Info: Logs a message indicating the file was downloaded successfully.
-            Error: Logs an error message if there was an issue downloading the file.
-
         Example:
-            >>> s3_manager = S3FileManager(s3_client)
             >>> s3_manager.download_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
             File path/to/my-file.txt downloaded to /local/path/to/my-file.txt
         """
@@ -89,8 +95,8 @@ class S3Manager:
         except ClientError as e:
             logger.error(f"Error downloading file {object_key}: {e}")
 
-    def parallel_download(self, list_files: list[Path], bucket_name: str, local_base_path: Path, num_w: int = 5):
-        with ThreadPoolExecutor(num_w) as executor:
+    def parallel_download(self, list_files: list[Path], bucket_name: str, local_base_path: Path, max_workers: int = 10):
+        with ThreadPoolExecutor(max_workers) as executor:
             futures = []
             for file in list_files:
                 file_path = Path(file)
@@ -110,12 +116,7 @@ class S3Manager:
             object_key (str): The key of the object in the S3 bucket.
             local_path (str): The local path of the file to be uploaded.
 
-        Logs:
-            Info: Logs a message indicating the file was uploaded successfully.
-            Error: Logs an error message if there was an issue uploading the file.
-
         Example:
-            >>> s3_manager = S3FileManager(s3_client)
             >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
             File /local/path/to/my-file.txt uploaded to my-bucket/path/to/my-file.txt
         """
