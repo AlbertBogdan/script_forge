@@ -1,6 +1,10 @@
 import zipfile
+import logging
 import os
 from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class ZipManager:
     def __init__(self, zip_path):
@@ -51,6 +55,7 @@ class ZipManager:
         extract_path = Path(extract_path)
         with zipfile.ZipFile(self.zip_path, 'r') as zip_file:
             zip_file.extractall(extract_path)
+            logger.info(f"Files was extract to {extract_path}")
 
     def list_contents(self):
         with zipfile.ZipFile(self.zip_path, 'r') as zip_file:
