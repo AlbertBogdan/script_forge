@@ -58,7 +58,7 @@ class S3Manager:
         folder_structure = {}
 
         for file in files:
-            parts = file.stem.split("/")
+            parts = str(file).split("/")
             current_level = folder_structure
 
             for part in parts:
