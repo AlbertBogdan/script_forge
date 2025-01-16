@@ -1,8 +1,9 @@
 import boto3
 import logging
-import tempfile
 from pathlib import Path
 from botocore.exceptions import ClientError
+from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -84,6 +85,17 @@ class S3Manager:
         except ClientError as e:
             logger.error(f"Error downloading file {object_key}: {e}")
 
+    def parallel_download(self, list_files: list[Path], bucket_name:str, local_base_path: Path):
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = []
+            for file in list_files:
+                file_path = Path(file)
+                local_path = local_base_path / file_path.name
+                futures.append(executor.submit(self.download_file, bucket_name, file, local_path))
+
+            for future in tqdm(as_completed(futures), total=len(futures)):
+                future.result()  # This will raise any exceptions that occurred during the download
+
     def upload_file(self, bucket_name: str, object_key: Path, local_path: Path):
         """
         Uploads a file from a local path to an S3 bucket.
@@ -97,7 +109,6 @@ class S3Manager:
             Info: Logs a message indicating the file was uploaded successfully.
             Error: Logs an error message if there was an issue uploading the file.
 
-            
         Example:
             >>> s3_manager = S3FileManager(s3_client)
             >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
