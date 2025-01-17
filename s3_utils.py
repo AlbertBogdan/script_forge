@@ -113,7 +113,7 @@ class S3Manager:
             logger.error(f"Error downloading file {object_key}: {e}")
 
 
-    def parallel_download(self, list_files: list[Path], bucket_name: str, local_base_path: Path, max_workers: int = 10):
+    def parallel_download(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = 10):
         """
         Downloads multiple files in parallel from an S3 bucket.
 
@@ -123,11 +123,12 @@ class S3Manager:
             local_base_path (Path): The base directory where files will be downloaded.
             max_workers (int): Maximum number of threads to use for parallel downloads. Defaults to 10.
         """
+        list_files = [Path(item) if isinstance(item, str) else item for item in list_files]
+
         with ThreadPoolExecutor(max_workers) as executor:
             futures = []
             for file in list_files:
-                file_path = Path(file)
-                local_path = local_base_path / file_path.name
+                local_path = local_base_path / file.name
                 futures.append(executor.submit(self.download_file, bucket_name, file, local_path))
 
             for future in tqdm(as_completed(futures), total=len(futures)):
