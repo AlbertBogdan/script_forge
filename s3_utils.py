@@ -1,12 +1,16 @@
-from tqdm.auto import tqdm
-import boto3
-import uuid
+import os
 import logging
-from pathlib import Path, PurePosixPath
+
+import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from rich.console import Console
+
+from tqdm.auto import tqdm
 from rich.tree import Tree
+from rich.console import Console
+
+from pathlib import Path, PurePosixPath
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 logging.basicConfig(level=logging.INFO)
@@ -15,10 +19,14 @@ logger = logging.getLogger(__name__)
 
 class S3Manager:
     def __init__(self, aws_access_key_id: str, aws_secret_access_key: str):
+        max_pool_connections = os.cpu_count() or 1
+        config = Config(max_pool_connections=max_pool_connections)
+
         self.s3_client = boto3.client(
             "s3",
             aws_access_key_id=aws_access_key_id,
             aws_secret_access_key=aws_secret_access_key,
+            config=config
         )
 
     def list_files(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path]:
@@ -119,11 +127,10 @@ class S3Manager:
             logger.error(f"Error downloading file {object_key}: {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error downloading file {
-                         object_key}: {e}")
+            logger.error(f"Unexpected error downloading file {object_key}: {e}")
             return False
 
-    def download_files(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = 10, keep_structure=True):
+    def download_files(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = os.cpu_count() or 1, keep_structure=True):
         """
         Downloads multiple files in parallel from an S3 bucket.
 
@@ -188,7 +195,6 @@ class S3Manager:
         try:
             self.s3_client.upload_file(
                 str(local_path), bucket_name, str(object_key))
-            logger.info(f"File {local_path} uploaded to {
-                        bucket_name}/{object_key}")
+            logger.info(f"File {local_path} uploaded to {bucket_name}/{object_key}")
         except ClientError as e:
             logger.error(f"Error uploading file {local_path}: {e}")
