@@ -1,4 +1,4 @@
-from utils import tqdm
+from tqdm.auto import tqdm
 
 import boto3
 import uuid
@@ -102,7 +102,7 @@ class S3Manager:
                 full_local_path = local_path / object_key
             else:
                 unique_suffix = uuid.uuid4().hex[:8]
-                full_local_path = local_path / f"{object_key.name}_{unique_suffix}"
+                full_local_path = local_path / f"{object_key.name}"
 
             full_local_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -113,7 +113,7 @@ class S3Manager:
             logger.error(f"Error downloading file {object_key}: {e}")
 
 
-    def parallel_download(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = 10):
+    def parallel_download(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = 10, keep_structure=True):
         """
         Downloads multiple files in parallel from an S3 bucket.
 
@@ -128,8 +128,7 @@ class S3Manager:
         with ThreadPoolExecutor(max_workers) as executor:
             futures = []
             for file in list_files:
-                local_path = local_base_path / file.name
-                futures.append(executor.submit(self.download_file, bucket_name, file, local_path))
+                futures.append(executor.submit(self.download_file, bucket_name, file, local_base_path, keep_structure))
 
             for future in tqdm(as_completed(futures), total=len(futures)):
                 future.result()
