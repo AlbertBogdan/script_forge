@@ -1,0 +1,29 @@
+# Image Processing
+Pillow==9.5.0
+numpy==1.24.3
+opencv-python==4.7.0.72
+
+# Cloud and Web Services
+boto3==1.26.137
+botocore==1.29.137
+requests==2.30.0
+gradio-client==0.3.0
+
+# Machine Learning and AI
+torch==2.0.1
+sahi==0.11.14
+
+# Utility Libraries
+tqdm==4.65.0
+rich==10.16.2
+joblib==1.2.0
+more-itertools==9.1.0
+
+# Geometry and Visualization
+shapely==2.0.1
+IPython==8.12.0
+
+# Optional Dependencies (from specific scripts)
+bson==0.5.10
+dexlib==0.1.12-dev --index-url https://gitlab+deploy-token-6:yxfaQ5NUunxZoMATo2xC@gitlab.azati.com/api/v4/projects/766/packages/pypi/simple
+doc-toolbox==0.2.3 --index-url https://gitlab+deploy-token-16:gldt-ESse1y_MNbUv434QRamx@gitlab.azati.com/api/v4/projects/925/packages/pypi/simple
