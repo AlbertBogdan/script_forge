@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 class S3Manager:
     def __init__(self, aws_access_key_id: str, aws_secret_access_key: str):
-        max_pool_connections = os.cpu_count() or 1
+        max_pool_connections = os.cpu_count()*2
         config = Config(max_pool_connections=max_pool_connections)
 
         self.s3_client = boto3.client(
@@ -127,10 +127,11 @@ class S3Manager:
             logger.error(f"Error downloading file {object_key}: {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error downloading file {object_key}: {e}")
+            logger.error(f"Unexpected error downloading file {
+                         object_key}: {e}")
             return False
 
-    def download_files(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = os.cpu_count() or 1, keep_structure=True):
+    def download_files(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = os.cpu_count() - 1, keep_structure=True):
         """
         Downloads multiple files in parallel from an S3 bucket.
 
@@ -195,6 +196,7 @@ class S3Manager:
         try:
             self.s3_client.upload_file(
                 str(local_path), bucket_name, str(object_key))
-            logger.info(f"File {local_path} uploaded to {bucket_name}/{object_key}")
+            logger.info(f"File {local_path} uploaded to {
+                        bucket_name}/{object_key}")
         except ClientError as e:
             logger.error(f"Error uploading file {local_path}: {e}")
