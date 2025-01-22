@@ -1,10 +1,10 @@
-from toolbox.cvat.datumaro import make_datumaro_ocr_dataset
 from datetime import datetime
+from typing import Tuple
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from pathlib import Path
-from typing import Tuple
+
 from cvat_sdk import make_client
+from toolbox.cvat.datumaro import make_datumaro_ocr_dataset
 from toolbox.cvat.cvat import make_cvat_dataset, upload_dataset
 
 class CVATUtilities:
@@ -26,6 +26,16 @@ class CVATUtilities:
         output_dir: str,
         text_attribute: str = "text"
     ) -> Path:
+        """
+        Creates a dataset in CVAT format from the given dataset.
+
+        Args:
+            dataset: The dataset to be converted.
+            output_dir: The directory where the dataset will be saved.
+            text_attribute: The name of the text attribute in the dataset.
+        Returns:
+            The path to the created dataset.
+        """
         datumaro_dataset = make_datumaro_ocr_dataset(
             dataset=dataset,
             text_attribute_name=text_attribute
@@ -33,12 +43,12 @@ class CVATUtilities:
 
         timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
         ds_name = f"cvat_dataset_{timestamp}"
-        output_path = Path(output_dir) / ds_name
+        output_path = Path() / ds_name
 
         make_cvat_dataset(
             dataset=datumaro_dataset,
             ds_name=ds_name,
-            out_folder=str(output_path)
+            out_folder=str(output_dir)
         )
 
         return output_path
@@ -50,6 +60,19 @@ class CVATUtilities:
         task_name: str,
         dataset_format: str = "CVAT 1.1"
     ) -> None:
+        """
+        Uploads a dataset to CVAT.
+
+        Args:
+            dataset_path (Path): The path to the dataset to be uploaded.
+            project_id (int): The ID of the project to which the dataset should be uploaded.
+            task_name (str): The name of the task to be created.
+            dataset_format (str, optional): The format of the dataset. Defaults to "CVAT 1.1".
+
+        Raises:
+            FileNotFoundError: If the dataset does not exist.
+        """
+
         if not dataset_path.exists():
             raise FileNotFoundError(f"Dataset not found: {dataset_path}")
 
