@@ -127,8 +127,7 @@ class S3Manager:
             logger.error(f"Error downloading file {object_key}: {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error downloading file {
-                         object_key}: {e}")
+            logger.error(f"Unexpected error downloading file {object_key}: {e}")
             return False
 
     def download_files(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = os.cpu_count() - 1, keep_structure=True):
@@ -183,20 +182,32 @@ class S3Manager:
 
     def upload_file(self, bucket_name: str, object_key: Path, local_path: Path):
         """
-        Uploads a file from a local path to an S3 bucket.
-
+        Uploads a file from a local path to an S3 bucket with a progress bar.
         Args:
             bucket_name (str): The name of the S3 bucket.
             object_key (Path): The key of the object in the S3 bucket.
             local_path (Path): The local path of the file to be uploaded.
-
         Example:
             >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
         """
         try:
-            self.s3_client.upload_file(
-                str(local_path), bucket_name, str(object_key))
-            logger.info(f"File {local_path} uploaded to {
-                        bucket_name}/{object_key}")
-        except ClientError as e:
+            file_size = os.path.getsize(local_path)
+            with tqdm(
+                total=file_size,
+                unit="B",
+                unit_scale=True,
+                desc=f"Uploading {local_path.name}",
+                dynamic_ncols=True,
+            ) as pbar:
+                with open(local_path, "rb") as f:
+                    self.s3_client.upload_fileobj(
+                        Fileobj=f,
+                        Bucket=bucket_name,
+                        Key=str(object_key),
+                        Callback=lambda bytes_transferred: pbar.update(bytes_transferred),
+                    )
+            logger.info(f"File {local_path} uploaded to {bucket_name}/{object_key}")
+        except (ClientError, OSError) as e:
             logger.error(f"Error uploading file {local_path}: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error uploading file {local_path}: {e}")
