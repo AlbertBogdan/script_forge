@@ -5,10 +5,11 @@ from ipywidgets import (
 )
 from IPython.display import display
 from pathlib import Path, PurePosixPath
+from s3_tools import S3Manager
 
 
 class S3ManagerGUI:
-    def __init__(self, s3_manager, show_files=False):
+    def __init__(self, s3_manager: S3Manager, show_files: bool = False):
         if not self._is_jupyter():
             raise RuntimeError("This GUI works only in Jupyter Notebook!")
         self.s3_manager = s3_manager
@@ -79,21 +80,21 @@ class S3ManagerGUI:
         bucket = self.bucket_name.value
         prefix = self.s3_prefix.value
         try:
-            if operation == 'Upload':
+            if operation == 'Download':
                 self._handle_upload(local_path, bucket, prefix)
             else:
                 self._handle_download(local_path, bucket, prefix)
         except Exception as e:
             self._show_error(f"Critical error: {str(e)}")
 
-    def _handle_upload(self, local_path, bucket, prefix):
+    def _handle_upload(self, local_path: Path, bucket: str, prefix: str):
         files = [f for f in local_path.glob('**/*') if f.is_file()]
         if self.show_files:
             with self.output:
                 print(f"Found {len(files)} files for upload")
         self.s3_manager.upload_files(bucket, prefix, files)
 
-    def _handle_download(self, local_path, bucket, prefix):
+    def _handle_download(self, local_path, bucket: str, prefix: str):
         with self.output:
             print("Retrieving S3 structure...")
         s3_files = self.s3_manager.list_files(bucket, prefix)
@@ -106,8 +107,8 @@ class S3ManagerGUI:
         display(self.folder_selection_box)
         self.main_box.layout.display = 'none'
 
-    def _extract_s3_folders(self, s3_files):
-        folders = set()
+    def _extract_s3_folders(self, s3_files: list[Path]):
+        folders: set = set()
         for path in s3_files:
             parts = path.parts
             if '.' in parts[-1]:
