@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 class S3Manager:
     def __init__(self, aws_access_key_id: str, aws_secret_access_key: str):
-        max_pool_connections = os.cpu_count()*2
-        config = Config(max_pool_connections=max_pool_connections)
+        self.max_threads = os.cpu_count()
+        config = Config(max_pool_connections=self.max_threads * 2)
 
         self.s3_client = boto3.client(
             "s3",
@@ -28,6 +28,172 @@ class S3Manager:
             aws_secret_access_key=aws_secret_access_key,
             config=config
         )
+
+    def _process_operations(self, operations, description, success_message, error_message_prefix):
+        success_count = 0
+        failure_count = 0
+
+        with ThreadPoolExecutor(self.max_threads) as executor:
+            futures = [executor.submit(op) for op in operations]
+
+            with tqdm(
+                total=len(futures),
+                desc=description,
+                unit="file",
+                dynamic_ncols=True
+            ) as pbar:
+                for future in as_completed(futures):
+                    try:
+                        result = future.result()
+                        if result:
+                            success_count += 1
+                        else:
+                            failure_count += 1
+                    except Exception as e:
+                        logger.error(f"{error_message_prefix}: {e}")
+                        failure_count += 1
+                    finally:
+                        pbar.update(1)
+
+        tqdm.write(f"\n{success_message}")
+        tqdm.write(f"Successfully processed: {success_count} files")
+        tqdm.write(f"Failed: {failure_count} files")
+
+        return success_count, failure_count
+
+    def _normalize_paths(self, list_files):
+        return [
+            Path(item) if isinstance(item, str) else item
+            for item in list_files
+        ]
+
+    def download_files(self, bucket_name: str, list_files: list[Path | str], local_base_path: Path | str, keep_structure=True):
+        """
+        Downloads multiple files in parallel from an S3 bucket.
+
+        Args:
+            list_files (list[Path]): List of files to download.
+            bucket_name (str): The name of the S3 bucket.
+            local_base_path (Path): The base directory where files will be downloaded.
+            max_workers (int): Maximum number of threads to use for parallel downloads. Defaults to 10.
+            keep_structure (bool): Whether to preserve the S3 directory structure locally.
+                    If False, adds unique identifiers to avoid name conflicts. Defaults to True.
+        """
+        if isinstance(local_base_path, str):
+            local_base_path = Path(local_base_path)
+
+        list_files = self._normalize_paths(list_files)
+        operations = [
+            lambda f=file: self._download_file_single(
+                bucket_name=bucket_name,
+                object_key=f,
+                local_path=local_base_path,
+                keep_structure=keep_structure,
+                verbose=False
+            )
+            for file in list_files
+        ]
+
+        return self._process_operations(
+            operations=operations,
+            description=f"Downloading {len(list_files)} files",
+            success_message=f"All files processed. Downloaded to: {local_base_path}",
+            error_message_prefix="Error during download"
+        )
+
+    def _download_file_single(self, bucket_name: str, object_key: Path | str, local_path: Path | str, keep_structure: bool = True, verbose: bool = True):
+        """
+        Downloads a file from an S3 bucket to a local path.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            object_key (Path): The key of the object in the S3 bucket.
+            local_path (Path): The base local directory for downloads.
+            keep_structure (bool): Whether to preserve the S3 directory structure locally.
+                                If False, adds unique identifiers to avoid name conflicts.
+                                Defaults to True.
+        """
+        if isinstance(local_path, str):
+            local_path = Path(local_path)
+        try:
+            if keep_structure:
+                full_local_path = local_path / \
+                    object_key.relative_to(object_key.anchor)
+            else:
+                full_local_path = local_path / object_key.name
+
+            full_local_path.parent.mkdir(parents=True, exist_ok=True)
+            self.s3_client.download_file(
+                bucket_name, str(object_key), str(full_local_path))
+
+            if verbose:
+                tqdm.write(f"Downloaded: {object_key}")
+            return True
+        except Exception as e:
+            logger.error(f"Error downloading {object_key}: {e}")
+            return False
+
+    def upload_files(self, bucket_name: str, base_object_key: Path | str, list_files: list[Path | str]):
+        """
+        Uploads multiple files in parallel to an S3 bucket.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            base_object_key (Path | str): The base directory in the S3 bucket where files will be uploaded.
+            list_files (list[Path | str]): List of files to upload.
+
+        Example:
+            >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
+        """
+        if isinstance(base_object_key, str):
+            base_object_key = Path(base_object_key)
+
+        list_files = self._normalize_paths(list_files)
+        operations = [
+            lambda f=file: self._upload_file_single(
+                bucket_name=bucket_name,
+                object_key=base_object_key / f.name,
+                local_path=f
+            )
+            for file in list_files
+        ]
+
+        return self._process_operations(
+            operations=operations,
+            description=f"Uploading {len(list_files)} files",
+            success_message=f"All files processed. Uploaded to: {bucket_name}/{base_object_key}",
+            error_message_prefix="Error during upload"
+        )
+
+    def _upload_file_single(self, bucket_name: str, object_key: Path | str, local_path: Path | str):
+        """
+        Логика выгрузки одного файла с прогресс-баром.
+        """
+
+        if isinstance(local_path, str):
+            local_path = Path(local_path)
+
+        try:
+            file_size = os.path.getsize(local_path)
+            with tqdm(
+                total=file_size,
+                unit="B",
+                unit_scale=True,
+                desc=f"Uploading {local_path.name}",
+                leave=False,
+                dynamic_ncols=True
+            ) as pbar:
+                with open(local_path, "rb") as f:
+                    self.s3_client.upload_fileobj(
+                        Fileobj=f,
+                        Bucket=bucket_name,
+                        Key=str(object_key),
+                        Callback=lambda bytes_: pbar.update(bytes_)
+                    )
+            return True
+        except Exception as e:
+            logger.error(f"Error uploading {local_path}: {e}")
+            return False
 
     def list_files(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path]:
         """
@@ -96,118 +262,3 @@ class S3Manager:
         root = Tree("[bold blue]S3 File Structure[/bold blue]")
         build_tree(folder_structure, root)
         console.print(root)
-
-    def _download_file_single(self, bucket_name: str, object_key: Path, local_path: Path, keep_structure: bool = True, verbose: bool = True) -> bool:
-        """
-        Downloads a file from an S3 bucket to a local path.
-
-        Args:
-            bucket_name (str): The name of the S3 bucket.
-            object_key (Path): The key of the object in the S3 bucket.
-            local_path (Path): The base local directory for downloads.
-            keep_structure (bool): Whether to preserve the S3 directory structure locally.
-                                If False, adds unique identifiers to avoid name conflicts.
-                                Defaults to True.
-        """
-        try:
-            if keep_structure:
-                full_local_path = local_path / \
-                    object_key.relative_to(object_key.anchor)
-            else:
-                full_local_path = local_path / f"{object_key.name}"
-
-            full_local_path.parent.mkdir(parents=True, exist_ok=True)
-
-            self.s3_client.download_file(
-                bucket_name, str(object_key), str(full_local_path))
-            if verbose:
-                tqdm.write(f"Downloaded: {object_key}")
-            return True
-        except ClientError as e:
-            logger.error(f"Error downloading file {object_key}: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error downloading file {object_key}: {e}")
-            return False
-
-    def download_files(self, list_files: list[Path | str], bucket_name: str, local_base_path: Path, max_workers: int = os.cpu_count() - 1, keep_structure=True):
-        """
-        Downloads multiple files in parallel from an S3 bucket.
-
-        Args:
-            list_files (list[Path]): List of files to download.
-            bucket_name (str): The name of the S3 bucket.
-            local_base_path (Path): The base directory where files will be downloaded.
-            max_workers (int): Maximum number of threads to use for parallel downloads. Defaults to 10.
-            keep_structure (bool): Whether to preserve the S3 directory structure locally.
-                    If False, adds unique identifiers to avoid name conflicts. Defaults to True.
-        """
-        list_files = [Path(item) if isinstance(item, str)
-                      else item for item in list_files]
-        success_count = 0
-        failure_count = 0
-
-        with ThreadPoolExecutor(max_workers) as executor:
-            futures = [
-                executor.submit(
-                    self._download_file_single,
-                    bucket_name,
-                    file,
-                    local_base_path,
-                    keep_structure,
-                    False
-                )
-                for file in list_files
-            ]
-
-            with tqdm(
-                total=len(futures),
-                desc=f"Downloading {len(futures)} files",
-                unit="file",
-                dynamic_ncols=True
-            ) as pbar:
-                for future in as_completed(futures):
-                    result = future.result()
-                    if result:
-                        success_count += 1
-                    else:
-                        failure_count += 1
-                    pbar.update(1)
-
-        tqdm.write(f"\nAll files processed. Downloaded to: {local_base_path}")
-        tqdm.write(f"Successfully downloaded: {success_count} files")
-        tqdm.write(f"Failed downloads: {failure_count} files")
-
-        return success_count, failure_count
-
-    def upload_file(self, bucket_name: str, object_key: Path, local_path: Path):
-        """
-        Uploads a file from a local path to an S3 bucket with a progress bar.
-        Args:
-            bucket_name (str): The name of the S3 bucket.
-            object_key (Path): The key of the object in the S3 bucket.
-            local_path (Path): The local path of the file to be uploaded.
-        Example:
-            >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
-        """
-        try:
-            file_size = os.path.getsize(local_path)
-            with tqdm(
-                total=file_size,
-                unit="B",
-                unit_scale=True,
-                desc=f"Uploading {local_path.name}",
-                dynamic_ncols=True,
-            ) as pbar:
-                with open(local_path, "rb") as f:
-                    self.s3_client.upload_fileobj(
-                        Fileobj=f,
-                        Bucket=bucket_name,
-                        Key=str(object_key),
-                        Callback=lambda bytes_transferred: pbar.update(bytes_transferred),
-                    )
-            logger.info(f"File {local_path} uploaded to {bucket_name}/{object_key}")
-        except (ClientError, OSError) as e:
-            logger.error(f"Error uploading file {local_path}: {e}")
-        except Exception as e:
-            logger.error(f"Unexpected error uploading file {local_path}: {e}")
