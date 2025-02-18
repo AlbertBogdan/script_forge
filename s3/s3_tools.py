@@ -11,7 +11,7 @@ from rich.console import Console
 
 from pathlib import Path, PurePosixPath
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from typing import Callable
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +19,18 @@ logger = logging.getLogger(__name__)
 
 class S3Manager:
     def __init__(self, aws_access_key_id: str, aws_secret_access_key: str):
+        """
+        Initialize S3Manager with AWS access key pair.
+
+        Args:
+            aws_access_key_id: AWS access key ID.
+            aws_secret_access_key: AWS secret access key.
+
+        Notes:
+            The maximum number of threads used by boto3 is set to the number of CPUs available,
+            multiplied by 2. This should be sufficient for most file operations, but it can be
+            increased if needed.
+        """
         self.max_threads = os.cpu_count()
         config = Config(max_pool_connections=self.max_threads * 2)
 
@@ -29,7 +41,39 @@ class S3Manager:
             config=config
         )
 
-    def _process_operations(self, operations, description, success_message, error_message_prefix):
+    def _with_progress_bar(self, total: int, desc: str, file_operation: callable) -> None:
+        """
+        Wrap a file operation with a tqdm progress bar.
+
+        Args:
+            total: Total size of the file operation, in bytes.
+            desc: Description to display above the progress bar.
+            file_operation: Callable that takes a single argument, a callable to report bytes written.
+        """
+        with tqdm(
+            total=total,
+            unit="B",
+            unit_scale=True,
+            desc=desc,
+            leave=False,
+            dynamic_ncols=True
+        ) as pbar:
+            file_operation(lambda bytes_: pbar.update(bytes_))
+
+    def _process_operations(self, operations: list[Callable[..., bool]], description: str, success_message: str, error_message_prefix: str):
+        """
+        Execute a list of file operations in parallel with a progress bar.
+
+        Args:
+            operations: List of callables that each take a single argument, a callable to report bytes written.
+            description: Description to display above the progress bar.
+            success_message: Message to display when all operations are complete.
+            error_message_prefix: Prefix to use for error messages.
+
+        Returns:
+            tuple: (success_count, failure_count) where success_count is the number of operations that completed
+                successfully and failure_count is the number of operations that failed.
+        """
         success_count = 0
         failure_count = 0
 
@@ -69,16 +113,22 @@ class S3Manager:
 
     def download_files(self, bucket_name: str, list_files: list[Path | str], local_base_path: Path | str, keep_structure=True):
         """
-        Downloads multiple files in parallel from an S3 bucket.
+        Downloads multiple files from an S3 bucket in parallel.
 
         Args:
-            list_files (list[Path]): List of files to download.
             bucket_name (str): The name of the S3 bucket.
-            local_base_path (Path): The base directory where files will be downloaded.
-            max_workers (int): Maximum number of threads to use for parallel downloads. Defaults to 10.
-            keep_structure (bool): Whether to preserve the S3 directory structure locally.
-                    If False, adds unique identifiers to avoid name conflicts. Defaults to True.
+            list_files (list[Path | str]): List of S3 object keys to download.
+            local_base_path (Path | str): The local directory to download files into.
+            keep_structure (bool, optional): Whether to preserve the S3 directory structure locally.
+                Defaults to True.
+
+        Returns:
+            tuple: A tuple containing the count of successful and failed downloads.
+
+        Example:
+            >>> s3_manager.download_files('my-bucket', ['path/to/file1.txt', 'path/to/file2.txt'], './downloads')
         """
+
         if isinstance(local_base_path, str):
             local_base_path = Path(local_base_path)
 
@@ -103,15 +153,21 @@ class S3Manager:
 
     def _download_file_single(self, bucket_name: str, object_key: Path | str, local_path: Path | str, keep_structure: bool = True, verbose: bool = True):
         """
-        Downloads a file from an S3 bucket to a local path.
+        Downloads a single file from an S3 bucket.
 
         Args:
             bucket_name (str): The name of the S3 bucket.
-            object_key (Path): The key of the object in the S3 bucket.
-            local_path (Path): The base local directory for downloads.
+            object_key (Path | str): The key of the object in the S3 bucket.
+            local_path (Path | str): The local path to download the file to.
             keep_structure (bool): Whether to preserve the S3 directory structure locally.
-                                If False, adds unique identifiers to avoid name conflicts.
-                                Defaults to True.
+                    If False, adds unique identifiers to avoid name conflicts. Defaults to True.
+            verbose (bool): Whether to print the name of each downloaded file. Defaults to True.
+
+        Returns:
+            bool: True if the download was successful, False otherwise.
+
+        Example:
+            >>> s3_manager._download_file_single('my-bucket', 'path/to/my-file.txt', '/local/path/to/download')
         """
         if isinstance(local_path, str):
             local_path = Path(local_path)
@@ -123,8 +179,22 @@ class S3Manager:
                 full_local_path = local_path / object_key.name
 
             full_local_path.parent.mkdir(parents=True, exist_ok=True)
-            self.s3_client.download_file(
-                bucket_name, str(object_key), str(full_local_path))
+
+            object_info = self.s3_client.head_object(
+                Bucket=bucket_name, Key=str(object_key))
+            file_size = object_info['ContentLength']
+
+            with open(full_local_path, "wb") as f:
+                self._with_progress_bar(
+                    total=file_size,
+                    desc=f"Downloading {object_key}",
+                    file_operation=lambda callback: self.s3_client.download_fileobj(
+                        Bucket=bucket_name,
+                        Key=str(object_key),
+                        Fileobj=f,
+                        Callback=callback
+                    )
+                )
 
             if verbose:
                 tqdm.write(f"Downloaded: {object_key}")
@@ -135,16 +205,20 @@ class S3Manager:
 
     def upload_files(self, bucket_name: str, base_object_key: Path | str, list_files: list[Path | str]):
         """
-        Uploads multiple files in parallel to an S3 bucket.
+        Uploads multiple files to an S3 bucket in parallel.
 
         Args:
             bucket_name (str): The name of the S3 bucket.
-            base_object_key (Path | str): The base directory in the S3 bucket where files will be uploaded.
-            list_files (list[Path | str]): List of files to upload.
+            base_object_key (Path | str): The base key prefix for the objects in the S3 bucket.
+            list_files (list[Path | str]): List of local file paths to upload.
+
+        Returns:
+            tuple: A tuple containing the count of successful and failed uploads.
 
         Example:
-            >>> s3_manager.upload_file('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
+            >>> s3_manager.upload_files('my-bucket', 'path/to/', ['/local/path/to/file1.txt', '/local/path/to/file2.txt'])
         """
+
         if isinstance(base_object_key, str):
             base_object_key = Path(base_object_key)
 
@@ -165,31 +239,36 @@ class S3Manager:
             error_message_prefix="Error during upload"
         )
 
-    def _upload_file_single(self, bucket_name: str, object_key: Path | str, local_path: Path | str):
+    def _upload_file_single(self, bucket_name: str, object_key: Path | str, local_path: Path | str) -> bool:
         """
-        Логика выгрузки одного файла с прогресс-баром.
-        """
+        Uploads a single file to an S3 bucket.
 
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            object_key (Path | str): The key of the object in the S3 bucket.
+            local_path (Path | str): The path to the local file to upload.
+
+        Returns:
+            bool: True if the upload was successful, False otherwise.
+
+        Example:
+            >>> s3_manager._upload_file_single('my-bucket', 'path/to/my-file.txt', '/local/path/to/my-file.txt')
+        """
         if isinstance(local_path, str):
             local_path = Path(local_path)
-
         try:
             file_size = os.path.getsize(local_path)
-            with tqdm(
-                total=file_size,
-                unit="B",
-                unit_scale=True,
-                desc=f"Uploading {local_path.name}",
-                leave=False,
-                dynamic_ncols=True
-            ) as pbar:
-                with open(local_path, "rb") as f:
-                    self.s3_client.upload_fileobj(
+            with open(local_path, "rb") as f:
+                self._with_progress_bar(
+                    total=file_size,
+                    desc=f"Uploading {local_path.name}",
+                    file_operation=lambda callback: self.s3_client.upload_fileobj(
                         Fileobj=f,
                         Bucket=bucket_name,
                         Key=str(object_key),
-                        Callback=lambda bytes_: pbar.update(bytes_)
+                        Callback=callback
                     )
+                )
             return True
         except Exception as e:
             logger.error(f"Error uploading {local_path}: {e}")
@@ -197,15 +276,16 @@ class S3Manager:
 
     def list_files(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path]:
         """
-        Lists objects in an S3 bucket that match the specified prefix and optional file extension.
+        Lists the files in an S3 bucket.
 
         Args:
             bucket_name (str): The name of the S3 bucket.
-            prefix (str): The prefix to filter objects in the bucket.
-            file_extension (str, optional): The file extension to filter objects. If None, all objects with the specified prefix are listed. Defaults to None.
+            prefix (str): The prefix to filter the objects by.
+            file_extension (str, optional): The file extension to filter the objects by.
+                If not provided, all objects are returned.
 
         Returns:
-            list[Path]: A list of object keys as Path objects.
+            list[Path]: List of paths to files in the bucket.
         """
         try:
             response = self.s3_client.list_objects_v2(
@@ -215,7 +295,6 @@ class S3Manager:
                 return []
 
             objects = [
-                # Use PurePosixPath
                 PurePosixPath(obj["Key"]) for obj in response["Contents"]
                 if not file_extension or obj["Key"].endswith(file_extension)
             ]
