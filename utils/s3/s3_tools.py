@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Awaitable
 
-#logging.basicConfig(level=logging.INFO)
+# logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -537,3 +537,105 @@ class S3Manager:
         except Exception as e:
             logger.error(f"Error uploading {local_path}: {e}")
             return False
+
+    async def hybrid_download_files(
+        self,
+        bucket_name: str,
+        list_files: list[Path | str],
+        local_base_path: Path | str,
+        keep_structure: bool = True
+    ):
+        """
+        Downloads multiple files from an S3 bucket in parallel using a mix of sync and async.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            list_files (list[Path | str]): List of S3 object keys to download.
+            local_base_path (Path | str): The local directory to download files into.
+            keep_structure (bool): Whether to preserve the S3 directory structure locally.
+                If False, adds unique identifiers to avoid name conflicts. Defaults to True.
+
+        Returns:
+            tuple: A tuple containing the count of successful and failed downloads.
+        """
+        if isinstance(local_base_path, str):
+            local_base_path = Path(local_base_path)
+
+        list_files = self._normalize_paths(list_files)
+        loop = asyncio.get_event_loop()
+        tasks = []
+        for file in list_files:
+            tasks.append(loop.run_in_executor(
+                None,
+                self._download_file_single,
+                bucket_name,
+                file,
+                local_base_path,
+                keep_structure,
+                False
+            ))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        success_count = 0
+        failure_count = 0
+        for result in results:
+            if isinstance(result, Exception) or not result:
+                failure_count += 1
+            else:
+                success_count += 1
+
+        tqdm.write(
+            f"\nHybrid download completed. Downloaded to: {local_base_path}")
+        tqdm.write(f"Successfully processed: {success_count} files")
+        tqdm.write(f"Failed: {failure_count} files")
+
+        return success_count, failure_count
+
+    async def hybrid_upload_files(
+        self,
+        bucket_name: str,
+        base_object_key: Path | str,
+        list_files: list[Path | str]
+    ):
+        """
+        Uploads multiple files to an S3 bucket in parallel using a mix of sync and async.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            base_object_key (Path | str): The base key prefix for the objects in the S3 bucket.
+            list_files (list[Path | str]): List of local file paths to upload.
+
+        Returns:
+            tuple: A tuple containing the count of successful and failed uploads.
+        """
+        if isinstance(base_object_key, str):
+            base_object_key = Path(base_object_key)
+
+        list_files = self._normalize_paths(list_files)
+        loop = asyncio.get_event_loop()
+        tasks = []
+        for file in list_files:
+            object_key = base_object_key / file.name
+            tasks.append(loop.run_in_executor(
+                None,
+                self._upload_file_single,
+                bucket_name,
+                object_key,
+                file
+            ))
+
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        success_count = 0
+        failure_count = 0
+        for result in results:
+            if isinstance(result, Exception) or not result:
+                failure_count += 1
+            else:
+                success_count += 1
+
+        tqdm.write(
+            f"\nHybrid upload completed. Uploaded to: {bucket_name}/{base_object_key}")
+        tqdm.write(f"Successfully processed: {success_count} files")
+        tqdm.write(f"Failed: {failure_count} files")
+
+        return success_count, failure_count
