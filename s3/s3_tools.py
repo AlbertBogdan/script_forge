@@ -1,6 +1,9 @@
 import os
 import logging
 
+import asyncio
+import aioboto3
+
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
@@ -11,9 +14,9 @@ from rich.console import Console
 
 from pathlib import Path, PurePosixPath
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from typing import Callable
+from typing import Callable, Awaitable
 
-logging.basicConfig(level=logging.INFO)
+#logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -41,6 +44,9 @@ class S3Manager:
             config=config
         )
 
+        self.aws_access_key_id = aws_access_key_id
+        self.aws_secret_access_key = aws_secret_access_key
+
     def _with_progress_bar(self, total: int, desc: str, file_operation: callable) -> None:
         """
         Wrap a file operation with a tqdm progress bar.
@@ -59,6 +65,25 @@ class S3Manager:
             dynamic_ncols=True
         ) as pbar:
             file_operation(lambda bytes_: pbar.update(bytes_))
+
+    async def _async_with_progress_bar(self, total: int, desc: str, file_operation: Callable[[Callable[[int], None]], Awaitable[None]]) -> None:
+        """
+        Asynchronously wrap a file operation with a tqdm progress bar.
+
+        Args:
+            total: Total size of the file operation, in bytes.
+            desc: Description to display above the progress bar.
+            file_operation: Async callable that takes a callback to report bytes written.
+        """
+        with tqdm(
+            total=total,
+            unit="B",
+            unit_scale=True,
+            desc=desc,
+            leave=False,
+            dynamic_ncols=True
+        ) as pbar:
+            await file_operation(lambda bytes_: pbar.update(bytes_))
 
     def _process_operations(self, operations: list[Callable[..., bool]], description: str, success_message: str, error_message_prefix: str):
         """
@@ -341,3 +366,174 @@ class S3Manager:
         root = Tree("[bold blue]S3 File Structure[/bold blue]")
         build_tree(folder_structure, root)
         console.print(root)
+
+    async def async_download_files(self, bucket_name: str, list_files: list[Path | str], local_base_path: Path | str, keep_structure=True):
+        """
+        Asynchronously downloads multiple files from an S3 bucket in parallel.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            list_files (list[Path | str]): List of S3 object keys to download.
+            local_base_path (Path | str): The local directory to download files into.
+            keep_structure (bool, optional): Whether to preserve the S3 directory structure locally.
+                Defaults to True.
+
+        Returns:
+            tuple: A tuple containing the count of successful and failed downloads.
+        """
+        if isinstance(local_base_path, str):
+            local_base_path = Path(local_base_path)
+
+        list_files = self._normalize_paths(list_files)
+        session = aioboto3.Session(
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key
+        )
+        tasks = []
+        async with session.client("s3") as s3_client:
+            for file in list_files:
+                tasks.append(
+                    self._async_download_file_single(
+                        s3_client, bucket_name, file, local_base_path, keep_structure, False)
+                )
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        success_count = 0
+        failure_count = 0
+        for result in results:
+            if isinstance(result, Exception) or not result:
+                failure_count += 1
+            else:
+                success_count += 1
+
+        tqdm.write(
+            f"\nAll files processed asynchronously. Downloaded to: {local_base_path}")
+        tqdm.write(f"Successfully processed: {success_count} files")
+        tqdm.write(f"Failed: {failure_count} files")
+
+        return success_count, failure_count
+
+    async def _async_download_file_single(self, s3_client, bucket_name: str, object_key: Path | str, local_path: Path | str, keep_structure: bool = True, verbose: bool = True) -> bool:
+        """
+        Asynchronously downloads a single file from an S3 bucket.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            object_key (Path | str): The key of the object in the S3 bucket.
+            local_path (Path | str): The local path to download the file to.
+            keep_structure (bool): Whether to preserve the S3 directory structure locally.
+                    If False, adds unique identifiers to avoid name conflicts. Defaults to True.
+            verbose (bool): Whether to print the name of each downloaded file. Defaults to True.
+
+        Returns:
+            bool: True if the download was successful, False otherwise.
+        """
+        if isinstance(local_path, str):
+            local_path = Path(local_path)
+        try:
+            if keep_structure:
+                full_local_path = local_path / \
+                    object_key.relative_to(object_key.anchor)
+            else:
+                full_local_path = local_path / object_key.name
+
+            full_local_path.parent.mkdir(parents=True, exist_ok=True)
+
+            object_info = await s3_client.head_object(Bucket=bucket_name, Key=str(object_key))
+            file_size = object_info['ContentLength']
+
+            with open(full_local_path, "wb") as f:
+                await self._async_with_progress_bar(
+                    total=file_size,
+                    desc=f"Downloading {object_key}",
+                    file_operation=lambda callback: s3_client.download_fileobj(
+                        Bucket=bucket_name,
+                        Key=str(object_key),
+                        Fileobj=f,
+                        Callback=callback
+                    )
+                )
+
+            if verbose:
+                tqdm.write(f"Downloaded: {object_key}")
+            return True
+        except Exception as e:
+            logger.error(f"Error downloading {object_key}: {e}")
+            return False
+
+    async def async_upload_files(self, bucket_name: str, base_object_key: Path | str, list_files: list[Path | str]):
+        """
+        Asynchronously uploads multiple files to an S3 bucket in parallel.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            base_object_key (Path | str): The base key prefix for the objects in the S3 bucket.
+            list_files (list[Path | str]): List of local file paths to upload.
+
+        Returns:
+            tuple: A tuple containing the count of successful and failed uploads.
+        """
+        if isinstance(base_object_key, str):
+            base_object_key = Path(base_object_key)
+
+        list_files = self._normalize_paths(list_files)
+        session = aioboto3.Session(
+            aws_access_key_id=self.aws_access_key_id,
+            aws_secret_access_key=self.aws_secret_access_key
+        )
+        tasks = []
+        async with session.client("s3") as s3_client:
+            for file in list_files:
+                tasks.append(
+                    self._async_upload_file_single(
+                        s3_client, bucket_name, base_object_key / file.name, file)
+                )
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        success_count = 0
+        failure_count = 0
+        for result in results:
+            if isinstance(result, Exception) or not result:
+                failure_count += 1
+            else:
+                success_count += 1
+
+        tqdm.write(
+            f"\nAll files processed asynchronously. Uploaded to: {bucket_name}/{base_object_key}")
+        tqdm.write(f"Successfully processed: {success_count} files")
+        tqdm.write(f"Failed: {failure_count} files")
+
+        return success_count, failure_count
+
+    async def _async_upload_file_single(self, s3_client, bucket_name: str, object_key: Path | str, local_path: Path | str, verbose: bool = True) -> bool:
+        """
+        Asynchronously uploads a single file to an S3 bucket.
+
+        Args:
+            bucket_name (str): The name of the S3 bucket.
+            object_key (Path | str): The key of the object in the S3 bucket.
+            local_path (Path | str): The path to the local file to upload.
+            verbose (bool): Whether to print the name of each uploaded file. Defaults to True.
+
+        Returns:
+            bool: True if the upload was successful, False otherwise.
+        """
+        if isinstance(local_path, str):
+            local_path = Path(local_path)
+        try:
+            file_size = os.path.getsize(local_path)
+            with open(local_path, "rb") as f:
+                await self._async_with_progress_bar(
+                    total=file_size,
+                    desc=f"Uploading {local_path.name}",
+                    file_operation=lambda callback: s3_client.upload_fileobj(
+                        Fileobj=f,
+                        Bucket=bucket_name,
+                        Key=str(object_key),
+                        Callback=callback
+                    )
+                )
+            return True
+        except Exception as e:
+            logger.error(f"Error uploading {local_path}: {e}")
+            return False
