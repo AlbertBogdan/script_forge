@@ -1,0 +1,18 @@
+[project]
+name = "script-forge"
+version = "0.1.0"
+authors = [
+    { name = "Albert Bogdan", email = "albert.bohdan@azati.com" },
+]
+description = "Useful utils"
+readme = "README.md"
+requires-python = ">=3.11"
+
+dependencies = [
+    "aioboto3>=13.4.0",
+    "cvat-sdk>=2.30.0",
+    "doc-toolbox[excel,pdf]>=0.2.4",
+    "rich>=13.9.4",
+    "sahi>=0.11.20",
+    "ultralytics>=8.3.75",
+]
