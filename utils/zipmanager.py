@@ -11,6 +11,9 @@ class ZipManager:
         self.zip_path = Path(zip_path)
 
     def create_zip(self):
+        """
+        Creates an empty ZIP archive.
+        """
         with zipfile.ZipFile(self.zip_path, 'w') as zip_file:
             pass
 
