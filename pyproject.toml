@@ -11,6 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "aioboto3>=13.4.0",
     "cvat-sdk>=2.30.0",
+    "more-itertools>=10.6.0",
     "rich>=13.9.4",
     "sahi>=0.11.20",
     "ultralytics>=8.3.75",
