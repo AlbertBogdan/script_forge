@@ -15,7 +15,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
 ]
-
 dependencies = [
     "aioboto3>=13.4.0",
     "cvat-sdk>=2.30.0",
