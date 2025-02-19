@@ -1,6 +1,6 @@
 [project]
 name = "script-forge"
-version = "0.1.0"
+version = "0.1.1
 authors = [
     { name = "Albert Bogdan", email = "albert.bohdan@azati.com" },
 ]
@@ -16,3 +16,6 @@ dependencies = [
     "sahi>=0.11.20",
     "ultralytics>=8.3.75",
 ]
+
+[tool.setuptools.package-dir]
+utils="utils"
