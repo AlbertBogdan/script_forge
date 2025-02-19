@@ -11,6 +11,10 @@ authors = [
 description = "Useful utils"
 readme = "README.md"
 requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+]
 
 dependencies = [
     "aioboto3>=13.4.0",
