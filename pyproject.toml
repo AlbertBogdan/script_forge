@@ -26,4 +26,4 @@ dependencies = [
 ]
 
 [tool.setuptools.package-dir]
-utils="utils"
+script_forge = "utils"
