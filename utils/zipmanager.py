@@ -22,7 +22,7 @@ class ZipManager:
             with zipfile.ZipFile(self.zip_path, 'w') as zip_file:
                 pass
 
-    def add_file(self, file_path, arcname=None):
+    def add_file(self, file_path: str|Path, arcname=None):
         file_path = Path(file_path)
         if not file_path.is_file():
             raise FileNotFoundError(f"File not found: {file_path}")
@@ -31,7 +31,7 @@ class ZipManager:
                 zip_file.write(file_path, arcname=arcname or file_path.name)
             self.archived_count += 1
 
-    def add_folder(self, folder_path, base_arcname=None):
+    def add_folder(self, folder_path: str|Path, base_arcname=None):
         folder_path = Path(folder_path)
         if not folder_path.is_dir():
             raise NotADirectoryError(f"Directory not found: {folder_path}")
@@ -44,7 +44,7 @@ class ZipManager:
                         zip_file.write(file_path, arcname)
                         self.archived_count += 1
 
-    def add_items(self, items):
+    def add_items(self, items: list[Path|str]):
         tasks = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
             for item in items:
@@ -61,7 +61,7 @@ class ZipManager:
                 except Exception as e:
                     logger.error(f"Error processing item: {e}")
 
-    def extract_all(self, extract_path):
+    def extract_all(self, extract_path: str|Path):
         extract_path = Path(extract_path)
         with zipfile.ZipFile(self.zip_path, 'r') as zip_file:
             members = zip_file.namelist()
