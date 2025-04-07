@@ -13,4 +13,6 @@ IPython>=8.12.0
 ipykernel>=6.29.5
 bson>=0.5.10
 dexlib==0.1.12-dev
+pyfunctional>=1.5.0
+
 doc-toolbox[pdf,excel,ocr]>=0.2.3
