@@ -1,52 +1,109 @@
-# Utility Scripts Collection
+# Script Forge
 
-## Overview
-This repository contains a collection of utility scripts for various tasks including file management, cloud storage, OCR, and object detection.
+A Python utility library for various data processing and automation tasks.
 
-## Modules
+## Description
 
-### File Management
-- `zipmanager.py`: Provides utilities for creating, managing, and manipulating ZIP archives
-  - Create ZIP files
-  - Add files and folders to ZIP archives
-  - Extract ZIP contents
-  - List ZIP contents
+Script Forge is a collection of utilities for handling various data processing tasks, including OCR (Optical Character Recognition), S3 storage operations, and data management tools.
 
-### Cloud Storage
-- `s3_tools.py`: AWS S3 interaction utilities
-  - List files in S3 buckets
-  - Download files from S3
-  - Upload files to S3
-  - Print file structures
+## Features
 
-### Schema and Image Handling
-- `schemas_loader.py`: Manages loading and saving of various schema types
-  - Load and save image schemas
-  - Manage annotations
-  - Handle image and category metadata
-
-### OCR (Optical Character Recognition)
-- `ocr/gradio_clients.py`: OCR-related utilities
-  - Text detection
-  - Image conversion
-  - Text recognition from images and PDFs
-
-### Object Detection
-- `obj_detect/yolo.py`: YOLO object detection utilities
-  - Load object detection models
-  - Perform predictions with model slicing
-
-## Subfolders
-- `kh/`: Additional utility scripts (contents not fully explored)
-- `ocr/`: OCR-related tools
-- `obj_detect/`: Object detection utilities
+- OCR processing capabilities
+- S3 storage integration
+- Data compression and management tools
+- CVAT integration tools
+- Various utility functions for data processing
 
 ## Requirements
-- Python 3.8+
-- Dependencies: See `requirements.txt`
 
-## Usage
-Refer to individual script docstrings for specific usage instructions.
+- Python >= 3.12.8
+- See `requirements.txt` for full list of dependencies
+
+## Installation
+
+1. Clone the repository:
+```bash
+git clone [repository-url]
+```
+
+2. Install dependencies using uv:
+```bash
+uv pip install -r requirements.txt
+```
+
+## Project Structure
+
+```
+.
+├── utils/               # Utility modules
+│   ├── kh/             # Knowledge Hub utilities
+│   │   ├── kh2_records_deserializer.py    # KH2 records deserialization
+│   │   ├── kh2_upload_example_misc.py     # KH2 upload examples
+│   │   ├── kh_documents_uploader_service.py # Document upload service
+│   │   ├── kh_link.py                     # KH resource links
+│   │   └── kh2-generate-zip.ipynb         # ZIP generation examples
+│   ├── ocr/            # OCR processing utilities
+│   │   └── gradio_clients.py              # OCR API clients
+│   ├── s3/             # S3 storage utilities
+│   │   ├── manager.py                     # S3 management
+│   │   └── gui.py                         # S3 GUI interface
+│   ├── zipmanager.py   # ZIP file management
+│   └── cvat_tools.py   # CVAT integration tools
+├── pyproject.toml      # Project configuration
+├── requirements.txt    # Python dependencies
+└── README.md          # This file
+```
+
+## Module Descriptions
+
+### S3 Utilities (utils/s3/)
+Provides comprehensive tools for Amazon S3 storage operations:
+- Efficient file uploads/downloads with progress tracking
+- Parallel/concurrent operations
+- Asynchronous operations via aioboto3
+- Directory structure preservation
+- File listing and browsing
+- Error handling and retries
+
+### OCR Utilities (utils/ocr/)
+Tools for Optical Character Recognition:
+- Text detection in images
+- Text recognition from cropped regions
+- Document OCR processing
+- Symbol detection
+- Batch processing with parallel execution
+- Automatic retry mechanisms
+
+### Knowledge Hub Utilities (utils/kh/)
+Tools for Knowledge Hub integration:
+- KH2 records deserialization
+- Document upload automation
+- Resource link management
+- ZIP archive generation
+- Document processing workflows
+
+### Additional Utilities
+- `zipmanager.py`: ZIP file management and compression
+- `cvat_tools.py`: CVAT (Computer Vision Annotation Tool) integration
+
+## Dependencies
+
+Major dependencies include:
+- aioboto3: For async S3 operations
+- doc-toolbox: For document processing
+- opencv-python: For image processing
+- numpy: For numerical operations
+- requests: For HTTP requests
+- and more...
 
 ## License
-See `LICENSE` file for licensing information.
+
+This project is licensed under the terms specified in the LICENSE file.
+
+## Contributing
+
+Please read the contributing guidelines before submitting pull requests.
+
+## Support
+
+For support, please contact the project maintainers.
