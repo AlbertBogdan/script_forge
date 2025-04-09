@@ -107,3 +107,11 @@ Please read the contributing guidelines before submitting pull requests.
 ## Support
 
 For support, please contact the project maintainers.
+
+# Перемещаем всё содержимое папки script_forge в текущую директорию
+Move-Item -Path "script_forge\*" -Destination . -Force
+# Удаляем теперь пустую папку script_forge
+Remove-Item -Path "script_forge" -Recurse -Force
+
+# Перемещаем содержимое и удаляем папку
+mv script_forge/* . && rm -rf script_forge
