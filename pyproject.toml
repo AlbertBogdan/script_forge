@@ -23,6 +23,7 @@ dependencies = [
     "rich>=10.16.2",
     "shapely>=2.0.1",
     "tqdm>=4.65.0",
+    "jupyter>=1.1.1",
 ]
 
 [tool.uv]
