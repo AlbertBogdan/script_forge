@@ -8,7 +8,7 @@ dependencies = [
     "aioboto3>=14.1.0",
     "bson>=0.5.10",
     "dexlib==0.1.12.dev0",
-    "doc-toolbox[excel,ocr,pdf]>=0.2.3",
+    "doc-toolbox[excel,ocr,pdf]>=0.2.18",
     "gradio>=5.24.0",
     "gradio-client>=0.3.0",
     "ipykernel>=6.29.5",
