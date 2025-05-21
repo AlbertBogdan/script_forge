@@ -1,4 +1,4 @@
-import hashlib
+import base64
 import logging
 import os
 from collections.abc import Callable
@@ -188,9 +188,8 @@ class S3Manager:
             if keep_structure:
                 full_local_path = local_path / object_key.relative_to(object_key.anchor)
             elif not is_unique:
-                hash_func = getattr(hashlib, "sha256")()
-                hash_func.update(object_key.name)
-                full_local_path = local_path / f"{hash_func.hexdigest()}{object_key.suffix}"
+                encode_filename = base64.b64encode(str(object_key.with_suffix(""))).decode()
+                full_local_path = local_path / f"{encode_filename}{object_key.suffix}"
             else:
                 full_local_path = local_path / object_key.name
 
