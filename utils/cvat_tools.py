@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import Tuple
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -8,7 +7,7 @@ from toolbox.cvat.datumaro import make_datumaro_ocr_dataset
 from toolbox.cvat.cvat import make_cvat_dataset, upload_dataset
 
 class CVATUtilities:
-    def __init__(self, host: str, port: str, credentials: Tuple[str, str]):
+    def __init__(self, host: str, port: str, credentials: tuple[str, str]):
         self.client = make_client(
             host=host, port=port, credentials=credentials)
         self.tmp_dir = TemporaryDirectory()

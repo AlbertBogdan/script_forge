@@ -1,8 +1,9 @@
-import openpyxl
 import shutil
 from datetime import datetime
-from tqdm import tqdm
+
+import openpyxl
 from openpyxl.utils import get_column_letter
+from tqdm import tqdm
 
 
 class ExcelPipeline:
