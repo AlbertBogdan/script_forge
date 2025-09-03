@@ -21,7 +21,6 @@ class PageComponent:
 class FileComponent:
     local_path: Path
     blob_path: Path = None
-    pdf_repr_path: Path | None = None
     pages: tuple[PageComponent, ...] | None = None
 
 
@@ -48,18 +47,16 @@ class PdfSystem(ProcessFileSystem):
         return file_comp.local_path.suffix.lower() in self.SUPPORTED_EXTS
 
     def process(self, file_comp: FileComponent) -> None:
-        file_comp.pdf_repr_path = file_comp.local_path
-
-        if not file_comp.pdf_repr_path.exists():
-            print(f"MISSING PDF: {file_comp.pdf_repr_path}", file=sys.stderr)
+        if not file_comp.local_path.exists():
+            print(f"MISSING PDF: {file_comp.local_path}", file=sys.stderr)
             return
 
         try:
-            doc = pymupdf.open(file_comp.pdf_repr_path)
+            doc = pymupdf.open(file_comp.local_path)
             page_count = len(doc)
             doc.close()
         except (pymupdf.EmptyFileError, pymupdf.FileDataError) as e:
-            print(f"PDF ERROR: {type(e).__name__} - {file_comp.pdf_repr_path}", file=sys.stderr)
+            print(f"PDF ERROR: {type(e).__name__} - {file_comp.local_path}", file=sys.stderr)
             return
 
         stem = file_comp.local_path.stem
@@ -185,25 +182,14 @@ class IgnoreSystem(ProcessFileSystem):
         print(f"Ignoring unsupported file type: {file_comp.local_path}", file=sys.stderr)
 
 
-class OfficeSystem(ProcessFileSystem):
-    SUPPORTED_EXTS = {".docx", ".xlsx", ".pptx", ".odt", ".ods", ".xls", ".doc"}
+class ExcelSystem(ProcessFileSystem):
+    SUPPORTED_EXTS = {".xlsx", ".xls"}
 
     def can_handle(self, file_comp: FileComponent) -> bool:
-        return file_comp.local_path.suffix.lower() in self.SUPPORTED_EXTS
+        return False
 
     def process(self, file_comp: FileComponent) -> None:
-        stem = file_comp.local_path.stem
-        img_path = self.images_dir / f"{stem}___page_0.png"
-
-        if img_path.exists():
-            file_comp.pages = (
-                PageComponent(
-                    image_path=img_path,
-                    page_no=0,
-                    ocr_path=self.ocr_dir / f"{img_path.stem}_ocr.json",
-                    symbols_path=self.symbols_dir / f"{img_path.stem}_symbols.json",
-                ),
-            )
+        pass
 
     def extract_image(self, file_comp: FileComponent) -> None:
         pass
@@ -238,7 +224,7 @@ class ProjectReport:
         return [
             PdfSystem(self.images_dir, self.ocr_dir, self.symbols_dir),
             ImageSystem(self.images_dir, self.ocr_dir, self.symbols_dir),
-            # OfficeSystem(self.images_dir, self.ocr_dir, self.symbols_dir),
+            ExcelSystem(self.images_dir, self.ocr_dir, self.symbols_dir),
             IgnoreSystem(self.images_dir, self.ocr_dir, self.symbols_dir),
         ]
 
