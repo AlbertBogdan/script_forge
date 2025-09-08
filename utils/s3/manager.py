@@ -1,4 +1,5 @@
 import base64
+import fnmatch
 import logging
 import os
 from collections.abc import Callable
@@ -174,11 +175,8 @@ class S3Manager:
         Example:
             s3_manager._download_file_single('my-bucket', 'path/to/my-file.txt', '/local/path/to/download')
         """
-        if isinstance(local_path, str):
-            local_path = Path(local_path)
-
-        if isinstance(object_key, str):
-            object_key = Path(object_key)
+        local_path = Path(local_path)
+        object_key = Path(object_key)
 
         if object_key.is_dir():
             logger.error(f"It's dir {object_key}")
@@ -235,9 +233,8 @@ class S3Manager:
             s3_manager.upload_files('my-bucket', 'path/to/', ['/local/path/to/file1.txt',
                 '/local/path/to/file2.txt'])
         """
-
-        if isinstance(base_object_key, str):
-            base_object_key = Path(base_object_key)
+        list_files: list[Path] = [Path(item) if isinstance(item, str) else item for item in list_files]
+        base_object_key = Path(base_object_key)
 
         operations = [
             lambda f=file: self._upload_file_single(
@@ -296,7 +293,12 @@ class S3Manager:
             logger.error(f"Error uploading {local_path}: {e}")
             return False
 
-    def list_files(self, bucket_name: str, prefix: str, file_extension: str = None) -> list[Path] | None:
+    def list_files(
+        self,
+        bucket_name: str,
+        prefix: str,
+        file_pattern: str | list[str] | None = None,
+    ) -> list[Path]:
         """
         Lists the files in an S3 bucket.
 
@@ -315,20 +317,40 @@ class S3Manager:
                 logger.info(f"No objects found in folder: {prefix}")
                 return []
 
-            objects = [
-                Path(obj["Key"])
-                for obj in response["Contents"]
-                if not file_extension or obj["Key"].endswith(file_extension)
-            ]
+            raw_patterns = []
+            if isinstance(file_pattern, str):
+                raw_patterns = [file_pattern]
+            elif isinstance(file_pattern, list):
+                raw_patterns = file_pattern
 
-            if not objects:
-                logger.info(f"No {file_extension if file_extension else 'files'} found in folder: {prefix}")
+            patterns = []
+            for p in raw_patterns:
+                if any(ch in p for ch in ("*", "?", "[")):
+                    patterns.append(p)
+                else:
+                    patterns.append(f"*.{p.lstrip('.')}")
+            patterns_lower = [pat.lower() for pat in patterns]
+
+            objects = []
+            for obj in response["Contents"]:
+                key = obj["Key"]
+                if key.endswith("/"):
+                    continue
+
+                file_path = Path(key)
+
+                name_lower = file_path.name.lower()
+                if not patterns_lower or any(fnmatch.fnmatchcase(name_lower, pat) for pat in patterns_lower):
+                    objects.append(file_path)
+
+            if not objects and patterns_lower:
+                logger.info(f"No files matching patterns {patterns_lower} found in folder: {prefix}")
 
             return objects
 
         except ClientError as e:
             logger.error(f"Error listing objects: {e}")
-            return None
+            return []
 
     def print_file_structure(self, files: list[Path | str]):
         """
