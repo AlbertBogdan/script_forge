@@ -2,6 +2,7 @@ import base64
 import fnmatch
 import logging
 import os
+import re
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -94,28 +95,37 @@ class S3Manager:
 
     def download_files(
         self,
-        bucket_name: str,
-        list_files: list[Path | str] | str | Path,
+        list_files: list[tuple[str, Path | str]] | tuple[str, Path | str],
         local_base_path: Path | str,
         keep_structure=True,
         progress_bar=True,
     ):
         """
-        Downloads multiple files from an S3 bucket in parallel.
+        Download multiple files from one or more S3 buckets in parallel.
 
         Args:
-            bucket_name (str): The name of the S3 bucket.
-            list_files (list[Path | str]): List of S3 object keys to download.
-            local_base_path (Path | str): The local directory to download files into.
-            keep_structure (bool, optional): Whether to preserve the S3 directory structure locally.
+            list_files (list[tuple[str, Path | str]] | tuple[str, Path | str]):
+                A list of tuples (bucket_name, object_key) or a single tuple specifying
+                the S3 files to download.
+            local_base_path (Path | str):
+                The local base directory where files will be saved.
+            keep_structure (bool, optional):
+                If True, preserves the original S3 key directory structure under
+                the local_base_path. Defaults to True.
+            progress_bar (bool, optional):
+                If True, displays a progress bar for each file download.
                 Defaults to True.
-            progress_bar (bool, optional): If True, displays a progress bar during
-                download. Defaults to True.
+
         Returns:
-            tuple: A tuple containing the count of successful and failed downloads.
+            tuple[int, int]: A tuple (success_count, failure_count) indicating
+            the number of files downloaded successfully and the number of failures.
 
         Example:
-            s3_manager.download_files('my-bucket', ['path/to/file1.txt', 'path/to/file2.txt'], './downloads')
+            s3_manager.download_files(
+                list_files=[("my-bucket", "path/to/file1.txt"),
+                            ("my-bucket", "path/to/file2.txt")],
+                local_base_path="./downloads"
+            )
         """
 
         is_unique = self._is_unique(list_files)
@@ -123,7 +133,7 @@ class S3Manager:
         if isinstance(local_base_path, str):
             local_base_path = Path(local_base_path)
 
-        if isinstance(list_files, str | Path):
+        if isinstance(list_files, tuple):
             list_files = [list_files]
 
         operations = [
@@ -135,7 +145,7 @@ class S3Manager:
                 keep_structure=keep_structure,
                 progress_bar=progress_bar,
             )
-            for file in list_files
+            for bucket_name, file in list_files
         ]
 
         return self._process_operations(
@@ -298,18 +308,35 @@ class S3Manager:
         bucket_name: str,
         prefix: str,
         file_pattern: str | list[str] | None = None,
-    ) -> list[Path]:
+    ) -> list[tuple[str, Path]]:
         """
-        Lists the files in an S3 bucket.
+        List files in an S3 bucket under a given prefix, with optional filtering.
 
         Args:
-            bucket_name (str): The name of the S3 bucket.
-            prefix (str): The prefix to filter the objects by.
-            file_extension (str, optional): The file extension to filter the objects by.
-                If not provided, all objects are returned.
+            bucket_name (str):
+                The name of the S3 bucket.
+            prefix (str):
+                The prefix (folder-like path) to search within the bucket.
+            file_pattern (str | list[str] | None, optional):
+                File extension(s) or glob-style patterns to filter results.
+                Examples: "txt", [".csv", "*.json"], or ["data_*.parquet"].
+                If None, all files are returned. Defaults to None.
 
         Returns:
-            list[Path]: List of paths to files in the bucket.
+            list[tuple[str, Path]]:
+                A list of (bucket_name, Path(object_key)) tuples for matching files.
+
+        Notes:
+            - Directories (keys ending with "/") are ignored.
+            - Patterns are case-insensitive.
+            - Supports glob wildcards (*, ?, []).
+
+        Example:
+            files = s3_manager.list_files(
+                bucket_name="my-bucket",
+                prefix="data/",
+                file_pattern=["*.csv", "*.json"]
+            )
         """
         try:
             response = self.s3_client.list_objects_v2(Bucket=bucket_name, Prefix=prefix)
@@ -323,28 +350,22 @@ class S3Manager:
             elif isinstance(file_pattern, list):
                 raw_patterns = file_pattern
 
-            patterns = []
-            for p in raw_patterns:
-                if any(ch in p for ch in ("*", "?", "[")):
-                    patterns.append(p)
-                else:
-                    patterns.append(f"*.{p.lstrip('.')}")
-            patterns_lower = [pat.lower() for pat in patterns]
+            regex_patterns = [re.compile(p, re.IGNORECASE) for p in raw_patterns]
 
             objects = []
             for obj in response["Contents"]:
-                key = obj["Key"]
+                key: str = obj["Key"]
                 if key.endswith("/"):
                     continue
 
-                file_path = Path(key)
+                file_path = (bucket_name, Path(key))
+                filename = file_path[1].name
 
-                name_lower = file_path.name.lower()
-                if not patterns_lower or any(fnmatch.fnmatchcase(name_lower, pat) for pat in patterns_lower):
+                if not regex_patterns or any(p.search(filename) for p in regex_patterns):
                     objects.append(file_path)
 
-            if not objects and patterns_lower:
-                logger.info(f"No files matching patterns {patterns_lower} found in folder: {prefix}")
+            if not objects and regex_patterns:
+                logger.info(f"No files matching regex patterns {raw_patterns} found in folder: {prefix}")
 
             return objects
 
